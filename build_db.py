@@ -178,6 +178,7 @@ con.execute("""
     JOIN parts p ON ST_Intersects(o.geom, p.geom)
     WHERE ST_IsValid(o.geom) AND ST_IsValid(p.geom)
       AND o.height IS NULL   -- keep outlines that already have accurate explicit height tags
+      AND p.resolved_height > 5  -- ignore roof/shed parts that don't represent a main body
       AND ST_Area(ST_Intersection(o.geom, p.geom)) / NULLIF(ST_Area(o.geom), 0) > 0.3
 """)
 replaced = con.execute("SELECT COUNT(*) FROM outlines_with_parts").fetchone()[0]
