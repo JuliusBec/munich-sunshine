@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Munich Sunshine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { font-family: system-ui, sans-serif; background: #111; }
+
+    #map { position: absolute; inset: 0; }
+
+    /* ── Panel ── */
+    #panel {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 240px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(6px);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      z-index: 10;
+    }
+
+    #panel h1 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 14px;
+      letter-spacing: -0.3px;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+    .value { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+
+    /* sun arc */
+    #sun-arc {
+      margin: 12px 0;
+      position: relative;
+    }
+    #sun-arc svg { width: 100%; height: 48px; display: block; cursor: grab; user-select: none; touch-action: none; }
+    #arc-daylight {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* time control */
+    #time-control {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid #e5e5e5;
+    }
+    #time-control label {
+      display: block;
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    #time-input {
+      width: 100%;
+      padding: 6px 8px;
+      border: 1px solid #d0d0d0;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+      background: #fafafa;
+      cursor: pointer;
+    }
+    #time-input:focus { outline: none; border-color: #f5a623; }
+
+    /* cloud bar */
+    #cloud-bar-bg {
+      height: 5px;
+      background: #e5e5e5;
+      border-radius: 3px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    #cloud-bar {
+      height: 100%;
+      background: #aac4e0;
+      border-radius: 3px;
+      transition: width 0.4s ease;
+    }
+
+    /* status */
+    #status {
+      font-size: 11px;
+      color: #999;
+      margin-top: 10px;
+      min-height: 14px;
+    }
+    #status.error { color: #c0392b; }
+
+    /* loading spinner overlay */
+    #spinner {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      z-index: 10;
+      display: none;
+    }
+
+    /* ── Sun edge indicator ── */
+    #sun-indicator {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 9;
+      display: none;
+      transition: left 0.6s ease, top 0.6s ease, opacity 0.4s ease;
+      filter: drop-shadow(0 0 8px rgba(245,166,35,0.7));
+    }
+    #sun-indicator svg {
+      display: block;
+    }
+
+    /* ── Sunshine popup ── */
+    .sunshine-popup .maplibregl-popup-content {
+      background: rgba(255,255,255,0.95);
+      backdrop-filter: blur(6px);
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      min-width: 180px;
+      font-family: system-ui, sans-serif;
+    }
+    .sunshine-popup .maplibregl-popup-tip { border-top-color: rgba(255,255,255,0.95); }
+    .popup-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 6px;
+    }
+    .popup-status {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .popup-status.sunny  { color: #e8900a; }
+    .popup-status.shadow { color: #4a6080; }
+    .popup-detail {
+      font-size: 12px;
+      color: #555;
+      line-height: 1.4;
+    }
+    .popup-loading { font-size: 12px; color: #999; }
+
+    /* below-horizon notice */
+    #night-banner {
+      position: absolute;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(20,20,40,0.85);
+      color: #aac4e0;
+      font-size: 13px;
+      padding: 8px 18px;
+      border-radius: 20px;
+      z-index: 10;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="panel">
+  <h1>☀ Munich Sunshine</h1>
+
+  <!-- sun arc visualiser -->
+  <div id="sun-arc">
+    <svg viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
+      <!-- horizon line -->
+      <line x1="10" y1="44" x2="190" y2="44" stroke="#d0d0d0" stroke-width="1"/>
+      <!-- arc path (sunrise left ~E, sunset right ~W) -->
+      <path d="M10,44 Q100,4 190,44"
+            fill="none" stroke="#f5e4b8" stroke-width="2" stroke-dasharray="4 3"/>
+      <!-- sun dot -->
+      <circle id="arc-dot" cx="100" cy="24" r="7" fill="#f5a623"/>
+      <!-- cardinal labels -->
+      <text x="10" y="50" font-size="8" fill="#aaa">E</text>
+      <text x="93" y="50" font-size="8" fill="#aaa">S</text>
+      <text x="185" y="50" font-size="8" fill="#aaa">W</text>
+    </svg>
+  </div>
+
+  <div id="arc-daylight">
+    <span id="arc-sunrise-label">—</span>
+    <span id="arc-sunset-label">—</span>
+  </div>
+
+  <div class="row">
+    <span class="label">Azimuth</span>
+    <span class="value" id="val-azimuth">—</span>
+  </div>
+  <div class="row">
+    <span class="label">Elevation</span>
+    <span class="value" id="val-elevation">—</span>
+  </div>
+  <div class="row">
+    <span class="label">Cloud cover</span>
+    <span class="value" id="val-cloud">—</span>
+  </div>
+  <div id="cloud-bar-bg"><div id="cloud-bar" style="width:0%"></div></div>
+
+  <div class="row" style="margin-top:10px">
+    <span class="label">Buildings</span>
+    <span class="value" id="val-buildings">—</span>
+  </div>
+
+  <div id="time-control">
+    <label>Time (local)</label>
+    <input type="time" id="time-input" step="300" />
+  </div>
+
+  <div id="status"></div>
+</div>
+
+<div id="sun-indicator">
+  <svg id="sun-svg" viewBox="-20 -20 40 40" xmlns="http://www.w3.org/2000/svg">
+    <!-- rays -->
+    <g id="sun-rays" stroke="#f5a623" stroke-width="2" stroke-linecap="round">
+      <line x1="0" y1="-11" x2="0"  y2="-15"/>
+      <line x1="0" y1=" 11" x2="0"  y2=" 15"/>
+      <line x1="-11" y1="0" x2="-15" y2="0"/>
+      <line x1=" 11" y1="0" x2=" 15" y2="0"/>
+      <line x1="-7.8" y1="-7.8" x2="-10.6" y2="-10.6"/>
+      <line x1=" 7.8" y1="-7.8" x2=" 10.6" y2="-10.6"/>
+      <line x1="-7.8" y1=" 7.8" x2="-10.6" y2=" 10.6"/>
+      <line x1=" 7.8" y1=" 7.8" x2=" 10.6" y2=" 10.6"/>
+    </g>
+    <!-- core -->
+    <circle cx="0" cy="0" r="7" fill="#f5a623"/>
+  </svg>
+</div>
+
+<div id="spinner">Computing shadows…</div>
+<div id="night-banner">Sun is below the horizon — no shadows</div>
+
+<script>
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function nowLocalTime() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function localTimeToUTCISO(timeStr) {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const dateStr = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  return new Date(`${dateStr}T${timeStr}`).toISOString();
+}
+
+// ── Map ───────────────────────────────────────────────────────────────────
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: [11.5755, 48.1374],
+  zoom: 14,
+  minZoom: 13,
+  maxZoom: 18,
+});
+
+map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+
+// ── Shadow fetch & render ─────────────────────────────────────────────────
+
+let fetchTimer = null;
+
+function scheduleFetch(delay = 300) {
+  clearTimeout(fetchTimer);
+  fetchTimer = setTimeout(fetchShadows, delay);
+}
+
+async function fetchShadows() {
+  const bounds = map.getBounds();
+  const dtLocal = document.getElementById('time-input').value;
+  const dtUTC = localTimeToUTCISO(dtLocal);
+
+  const params = new URLSearchParams({
+    west:  bounds.getWest().toFixed(6),
+    south: bounds.getSouth().toFixed(6),
+    east:  bounds.getEast().toFixed(6),
+    north: bounds.getNorth().toFixed(6),
+    dt:    dtUTC,
+  });
+
+  setStatus('');
+  document.getElementById('spinner').style.display = 'block';
+
+  try {
+    const res = await fetch(`/api/shadows?${params}`);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || res.statusText);
+    }
+    const data = await res.json();
+    renderShadows(data);
+  } catch (e) {
+    setStatus(e.message, true);
+  } finally {
+    document.getElementById('spinner').style.display = 'none';
+  }
+}
+
+function renderShadows(data) {
+  const sun = data.sun;
+
+  // ── Panel values ──
+  document.getElementById('val-azimuth').textContent =
+    sun.above_horizon ? `${sun.azimuth.toFixed(1)}°` : '—';
+  document.getElementById('val-elevation').textContent =
+    `${sun.elevation.toFixed(1)}°`;
+  document.getElementById('val-buildings').textContent =
+    data.building_count?.toLocaleString() ?? '—';
+
+  updateSunArc(sun.azimuth, sun.elevation, sun.above_horizon);
+  placeSunOnEdge(sun.azimuth, sun.elevation, sun.above_horizon);
+
+  document.getElementById('night-banner').style.display =
+    sun.above_horizon ? 'none' : 'block';
+
+  // ── Shadow layer ──
+  const geojson = {
+    type: 'FeatureCollection',
+    features: data.merged_shadow
+      ? [{ type: 'Feature', geometry: data.merged_shadow, properties: {} }]
+      : [],
+  };
+
+  if (map.getSource('shadows')) {
+    map.getSource('shadows').setData(geojson);
+  } else {
+    map.addSource('shadows', { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: 'shadow-fill',
+      type: 'fill',
+      source: 'shadows',
+      paint: {
+        'fill-color': '#1a2535',
+        'fill-opacity': 0.55,
+      },
+    });
+    map.addLayer({
+      id: 'shadow-outline',
+      type: 'line',
+      source: 'shadows',
+      paint: {
+        'line-color': '#2a3f5f',
+        'line-width': 0.5,
+        'line-opacity': 0.4,
+      },
+    });
+  }
+}
+
+// ── Sun edge indicator ────────────────────────────────────────────────────
+
+function placeSunOnEdge(azimuth, elevation, above) {
+  const el = document.getElementById('sun-indicator');
+  if (!above || elevation <= 0) {
+    el.style.display = 'none';
+    return;
+  }
+
+  const mapEl = document.getElementById('map');
+  const W = mapEl.offsetWidth;
+  const H = mapEl.offsetHeight;
+  const PADDING = 44; // keep icon fully on-screen
+
+  // Direction vector in screen space (right=+x, down=+y, north=up)
+  const rad = azimuth * Math.PI / 180;
+  const dx = Math.sin(rad);
+  const dy = -Math.cos(rad);
+
+  // Find t so that (cx + t*dx, cy + t*dy) hits the padded edge rectangle
+  const cx = W / 2, cy = H / 2;
+  const hw = W / 2 - PADDING; // half-width of inner rect
+  const hh = H / 2 - PADDING;
+
+  let t = Infinity;
+  if (dx > 0) t = Math.min(t,  hw / dx);
+  if (dx < 0) t = Math.min(t, -hw / dx);
+  if (dy > 0) t = Math.min(t,  hh / dy);
+  if (dy < 0) t = Math.min(t, -hh / dy);
+
+  const x = cx + t * dx;
+  const y = cy + t * dy;
+
+  // Scale size and opacity with elevation (higher sun = bigger & brighter)
+  const size = 28 + (elevation / 70) * 16; // 28–44px
+  const opacity = 0.55 + (elevation / 70) * 0.45;
+
+  el.style.display = 'block';
+  el.style.left = `${x}px`;
+  el.style.top  = `${y}px`;
+  el.style.width  = `${size}px`;
+  el.style.height = `${size}px`;
+  el.style.opacity = Math.min(1, opacity);
+}
+
+// ── Sun arc visualiser ────────────────────────────────────────────────────
+
+// Map azimuth to SVG x: E=90°→x=10, S=180°→x=100, W=270°→x=190
+function azimuthToX(az) {
+  const clamped = Math.max(90, Math.min(270, az));
+  return 10 + ((clamped - 90) / 180) * 180;
+}
+
+// Map elevation to SVG y: 0°=44 (horizon), max~65°=4 (top)
+function elevationToY(el) {
+  const maxEl = 65;
+  const clamped = Math.max(0, Math.min(maxEl, el));
+  return 44 - (clamped / maxEl) * 40;
+}
+
+function updateSunArc(azimuth, elevation, above) {
+  const dot = document.getElementById('arc-dot');
+  dot.setAttribute('cx', azimuthToX(azimuth));
+  dot.setAttribute('cy', above ? elevationToY(elevation) : 50);
+  dot.setAttribute('fill', above ? '#f5a623' : '#aaa');
+}
+
+// ── Cloud cover + daylight times ──────────────────────────────────────────
+
+let _sunrise = null; // Date
+let _sunset  = null; // Date
+
+function fmt24(date) {
+  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+async function fetchSun() {
+  try {
+    const res = await fetch('/api/sun');
+    const data = await res.json();
+    const pct = data.cloud_cover ?? null;
+    document.getElementById('val-cloud').textContent = pct !== null ? `${pct}%` : '—';
+    document.getElementById('cloud-bar').style.width = `${pct ?? 0}%`;
+
+    if (data.sunrise) {
+      _sunrise = new Date(data.sunrise);
+      document.getElementById('arc-sunrise-label').textContent = fmt24(_sunrise);
+    }
+    if (data.sunset) {
+      _sunset = new Date(data.sunset);
+      document.getElementById('arc-sunset-label').textContent = fmt24(_sunset);
+    }
+  } catch (_) {}
+}
+
+// ── Status ────────────────────────────────────────────────────────────────
+
+function setStatus(msg, isError = false) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = isError ? 'error' : '';
+}
+
+// ── Sunshine popup ────────────────────────────────────────────────────────
+
+let activePopup = null;
+
+function formatSunshineResult(data, name) {
+  const title = name ? `<div class="popup-title">${name}</div>` : '';
+
+  if (data.reason === 'night') {
+    return `${title}
+      <div class="popup-status shadow">🌙 Night</div>
+      <div class="popup-detail">Sun is below the horizon.</div>`;
+  }
+
+  if (data.currently_sunny) {
+    const detail = data.reason === 'sunset'
+      ? `Until sunset in <b>${data.minutes} min</b>`
+      : data.reason === 'sunny_all_day'
+      ? `Sunny for the rest of the day`
+      : `In sun for <b>${data.minutes} more min</b><br>Shadow arrives at ${fmtTime(data.changes_at)}`;
+    return `${title}
+      <div class="popup-status sunny">☀ Sunny</div>
+      <div class="popup-detail">${detail}</div>`;
+  } else {
+    const detail = data.reason === 'shadow_until_sunset'
+      ? `In shadow until sunset`
+      : `Sun returns in <b>${data.minutes} min</b><br>at ${fmtTime(data.changes_at)}`;
+    return `${title}
+      <div class="popup-status shadow">🌑 In shadow</div>
+      <div class="popup-detail">${detail}</div>`;
+  }
+}
+
+function fmtTime(isoStr) {
+  if (!isoStr) return '—';
+  return new Date(isoStr).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
+async function showSunshinePopup(lngLat, name = null) {
+  // Show a loading popup immediately while we fetch
+  if (activePopup) activePopup.remove();
+  activePopup = new maplibregl.Popup({ className: 'sunshine-popup', closeButton: true })
+    .setLngLat(lngLat)
+    .setHTML(`<div class="popup-loading">Calculating…</div>`)
+    .addTo(map);
+
+  const dtUTC = localTimeToUTCISO(document.getElementById('time-input').value);
+  const params = new URLSearchParams({ lat: lngLat.lat, lon: lngLat.lng, dt: dtUTC });
+
+  try {
+    const res = await fetch(`/api/sunshine?${params}`);
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    if (activePopup?.isOpen()) {
+      activePopup.setHTML(formatSunshineResult(data, name));
+    }
+  } catch (e) {
+    if (activePopup?.isOpen()) {
+      activePopup.setHTML(`<div class="popup-detail" style="color:#c0392b">${e.message}</div>`);
+    }
+  }
+}
+
+// Click on blank map → query that point
+map.on('click', e => {
+  // Don't double-fire if a POI layer also matched
+  if (e.defaultPrevented) return;
+  showSunshinePopup(e.lngLat);
+});
+
+// Click on a POI → use its name
+['poi_r1', 'poi_r7', 'poi_r20'].forEach(layer => {
+  map.on('click', layer, e => {
+    e.preventDefault();
+    const name = e.features[0]?.properties?.name ?? null;
+    showSunshinePopup(e.lngLat, name);
+  });
+  map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+});
+
+// ── GPS ───────────────────────────────────────────────────────────────────
+
+const geolocate = new maplibregl.GeolocateControl({
+  positionOptions: { enableHighAccuracy: true },
+  trackUserLocation: true,
+  showUserHeading: true,
+});
+map.addControl(geolocate, 'bottom-right');
+
+// On load: try to fly to user's location silently
+navigator.geolocation?.getCurrentPosition(pos => {
+  map.flyTo({
+    center: [pos.coords.longitude, pos.coords.latitude],
+    zoom: 15,
+    duration: 1800,
+  });
+}, () => { /* permission denied — stay on Munich center */ });
+
+// ── Arc slider ────────────────────────────────────────────────────────────
+
+(function () {
+  const arcSvg = document.querySelector('#sun-arc svg');
+  let dragging = false;
+  let _arcRect = null;
+
+  function applyArcX(clientX) {
+    if (!_sunrise || !_sunset || !_arcRect) return;
+    const frac = Math.max(0, Math.min(1, (clientX - _arcRect.left) / _arcRect.width));
+    const ms   = _sunrise.getTime() + frac * (_sunset.getTime() - _sunrise.getTime());
+    // Snap to 30-minute intervals
+    const snapped = new Date(Math.round(ms / (30 * 60 * 1000)) * (30 * 60 * 1000));
+    const h = snapped.getHours(), m = snapped.getMinutes();
+    document.getElementById('time-input').value =
+      `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    // Move the arc dot immediately without waiting for a fetch
+    const az = 90 + frac * 180;
+    document.getElementById('arc-dot').setAttribute('cx', azimuthToX(az));
+  }
+
+  arcSvg.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    dragging = true;
+    _arcRect = arcSvg.getBoundingClientRect();
+    arcSvg.setPointerCapture(e.pointerId);
+    arcSvg.style.cursor = 'grabbing';
+    applyArcX(e.clientX);
+  });
+  arcSvg.addEventListener('pointermove', e => { if (dragging) applyArcX(e.clientX); });
+  arcSvg.addEventListener('pointerup', () => {
+    dragging = false;
+    arcSvg.style.cursor = 'grab';
+    scheduleFetch(0);
+  });
+  arcSvg.addEventListener('pointercancel', () => {
+    dragging = false;
+    arcSvg.style.cursor = 'grab';
+  });
+})();
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+
+document.getElementById('time-input').value = nowLocalTime();
+
+// POI classes to keep — food, drink, and outdoor seating only
+const KEEP_POI_CLASSES = [
+  'restaurant', 'cafe', 'bar', 'pub', 'fast_food',
+  'biergarten', 'food_court', 'ice_cream',
+];
+
+map.on('load', () => {
+  // Strip all POI layers down to food & drink only
+  ['poi_r1', 'poi_r7', 'poi_r20'].forEach(layerId => {
+    const existing = map.getFilter(layerId);
+    map.setFilter(layerId, [
+      'all',
+      existing,
+      ['match', ['get', 'class'], KEEP_POI_CLASSES, true, false],
+    ]);
+  });
+
+  fetchShadows();
+  fetchSun();
+});
+
+map.on('moveend', () => scheduleFetch(400));
+map.on('zoomend', () => scheduleFetch(400));
+
+document.getElementById('time-input').addEventListener('change', () => scheduleFetch(0));
+
+setInterval(fetchSun, 10 * 60 * 1000);
+
+// Reposition sun indicator if window is resized
+window.addEventListener('resize', () => scheduleFetch(200));
+</script>
+</body>
+</html>

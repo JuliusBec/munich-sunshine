@@ -1,0 +1,18 @@
+# Claude
+CLAUDE.md
+.claude/
+
+# Geo / OSM data
+*.geojsonl
+*.osm.pbf
+*.duckdb
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# macOS
+.DS_Store
