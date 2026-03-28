@@ -60,9 +60,9 @@
 
     /* time control */
     #time-control {
-      margin-top: 14px;
-      padding-top: 12px;
-      border-top: 1px solid #e5e5e5;
+      margin-top: 6px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e5e5;
     }
     #time-control label {
       display: block;
@@ -72,8 +72,13 @@
       letter-spacing: 0.5px;
       margin-bottom: 6px;
     }
+    #time-row {
+      display: flex;
+      gap: 6px;
+    }
     #time-input {
-      width: 100%;
+      flex: 1;
+      min-width: 0;
       padding: 6px 8px;
       border: 1px solid #d0d0d0;
       border-radius: 6px;
@@ -83,6 +88,20 @@
       cursor: pointer;
     }
     #time-input:focus { outline: none; border-color: #f5a623; }
+    #btn-now {
+      flex: 1;
+      min-width: 0;
+      padding: 6px 8px;
+      border: 1px solid #d0d0d0;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      background: #fafafa;
+      color: #444;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #btn-now:hover { background: #f5a623; border-color: #f5a623; color: #fff; }
 
     /* cloud bar */
     #cloud-bar-bg {
@@ -168,6 +187,63 @@
     }
     .popup-loading { font-size: 12px; color: #999; }
 
+    /* ── Search box ── */
+    #search-container {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      width: 280px;
+      z-index: 10;
+    }
+    #search-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: none;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      font-size: 14px;
+      font-family: inherit;
+      color: #1a1a1a;
+      outline: none;
+    }
+    #search-input::placeholder { color: #999; }
+    #search-input:focus { box-shadow: 0 4px 20px rgba(0,0,0,0.35), 0 0 0 2px #f5a623; }
+    #search-results {
+      margin-top: 4px;
+      background: rgba(255,255,255,0.96);
+      backdrop-filter: blur(6px);
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      list-style: none;
+      overflow: hidden;
+      display: none;
+    }
+    #search-results li {
+      padding: 9px 14px;
+      font-size: 13px;
+      color: #1a1a1a;
+      cursor: pointer;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    #search-results li:last-child { border-bottom: none; }
+    #search-results li:hover { background: #fff8ee; }
+    .search-result-name { font-weight: 600; }
+    .search-result-sub { font-size: 11px; color: #888; margin-top: 1px; }
+
+    /* night overlay — darkens the entire map */
+    #night-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 15, 35, 0.55);
+      pointer-events: none;
+      z-index: 5;
+      opacity: 0;
+      transition: opacity 0.8s ease;
+    }
+    #night-overlay.active { opacity: 1; }
+
     /* below-horizon notice */
     #night-banner {
       position: absolute;
@@ -187,6 +263,12 @@
 <body>
 
 <div id="map"></div>
+<div id="night-overlay"></div>
+
+<div id="search-container">
+  <input type="text" id="search-input" placeholder="Search cafes, bars, restaurants…" autocomplete="off" spellcheck="false" />
+  <ul id="search-results"></ul>
+</div>
 
 <div id="panel">
   <h1>☀ Munich Sunshine</h1>
@@ -213,7 +295,15 @@
     <span id="arc-sunset-label">—</span>
   </div>
 
-  <div class="row">
+  <div id="time-control">
+    <label>Time (local)</label>
+    <div id="time-row">
+      <input type="time" id="time-input" step="300" />
+      <button id="btn-now">Now</button>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:10px">
     <span class="label">Azimuth</span>
     <span class="value" id="val-azimuth">—</span>
   </div>
@@ -230,11 +320,6 @@
   <div class="row" style="margin-top:10px">
     <span class="label">Buildings</span>
     <span class="value" id="val-buildings">—</span>
-  </div>
-
-  <div id="time-control">
-    <label>Time (local)</label>
-    <input type="time" id="time-input" step="300" />
   </div>
 
   <div id="status"></div>
@@ -292,6 +377,10 @@ map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
 // ── Shadow fetch & render ─────────────────────────────────────────────────
 
+// Only compute shadows when the viewport is narrower than this (metres).
+// ~74.3 km per degree of longitude at 48°N.
+const SHADOW_MAX_VIEWPORT_M = 5000;
+
 let fetchTimer = null;
 
 function scheduleFetch(delay = 300) {
@@ -301,6 +390,17 @@ function scheduleFetch(delay = 300) {
 
 async function fetchShadows() {
   const bounds = map.getBounds();
+
+  // Skip shadow computation when zoomed out too far
+  const viewportM = (bounds.getEast() - bounds.getWest()) * 74_300;
+  if (viewportM > SHADOW_MAX_VIEWPORT_M) {
+    if (map.getSource('shadows')) {
+      map.getSource('shadows').setData({ type: 'FeatureCollection', features: [] });
+    }
+    setStatus('Zoom in to see shadows');
+    return;
+  }
+
   const dtLocal = document.getElementById('time-input').value;
   const dtUTC = localTimeToUTCISO(dtLocal);
 
@@ -346,6 +446,7 @@ function renderShadows(data) {
 
   document.getElementById('night-banner').style.display =
     sun.above_horizon ? 'none' : 'block';
+  document.getElementById('night-overlay').classList.toggle('active', !sun.above_horizon);
 
   // ── Shadow layer ──
   const geojson = {
@@ -593,14 +694,18 @@ navigator.geolocation?.getCurrentPosition(pos => {
     if (!_sunrise || !_sunset || !_arcRect) return;
     const frac = Math.max(0, Math.min(1, (clientX - _arcRect.left) / _arcRect.width));
     const ms   = _sunrise.getTime() + frac * (_sunset.getTime() - _sunrise.getTime());
-    // Snap to 30-minute intervals
-    const snapped = new Date(Math.round(ms / (30 * 60 * 1000)) * (30 * 60 * 1000));
+    // Snap to nearest 30-minute mark, sunrise, or sunset — whichever is closest
+    const snap30 = Math.round(ms / (30 * 60 * 1000)) * (30 * 60 * 1000);
+    const candidates = [snap30, _sunrise.getTime(), _sunset.getTime()];
+    const snapped = new Date(candidates.reduce((best, t) => Math.abs(t - ms) < Math.abs(best - ms) ? t : best));
     const h = snapped.getHours(), m = snapped.getMinutes();
     document.getElementById('time-input').value =
       `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    // Move the arc dot immediately without waiting for a fetch
-    const az = 90 + frac * 180;
-    document.getElementById('arc-dot').setAttribute('cx', azimuthToX(az));
+    // Move the arc dot along the bezier curve (M10,44 Q100,4 190,44)
+    // x is linear in t for this curve, so t = frac; y = 44 - 80t + 80t²
+    const dot = document.getElementById('arc-dot');
+    dot.setAttribute('cx', 10 + frac * 180);
+    dot.setAttribute('cy', 44 - 80 * frac + 80 * frac * frac);
   }
 
   arcSvg.addEventListener('pointerdown', e => {
@@ -622,6 +727,57 @@ navigator.geolocation?.getCurrentPosition(pos => {
     arcSvg.style.cursor = 'grab';
   });
 })();
+
+// ── Search ────────────────────────────────────────────────────────────────
+
+let _searchTimer = null;
+
+document.getElementById('search-input').addEventListener('input', e => {
+  clearTimeout(_searchTimer);
+  const q = e.target.value.trim();
+  if (q.length < 2) { closeSearch(); return; }
+  _searchTimer = setTimeout(() => doSearch(q), 300);
+});
+
+document.getElementById('search-input').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeSearch(); e.target.blur(); }
+});
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('search-container').contains(e.target)) closeSearch();
+});
+
+function closeSearch() {
+  const ul = document.getElementById('search-results');
+  ul.style.display = 'none';
+  ul.innerHTML = '';
+}
+
+async function doSearch(q) {
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return;
+    renderSearchResults(await res.json());
+  } catch (_) {}
+}
+
+function renderSearchResults(results) {
+  const ul = document.getElementById('search-results');
+  ul.innerHTML = '';
+  if (!results.length) { ul.style.display = 'none'; return; }
+  results.forEach(r => {
+    const li = document.createElement('li');
+    li.innerHTML = `<div class="search-result-name">${r.name}</div><div class="search-result-sub">${r.display}</div>`;
+    li.addEventListener('click', () => {
+      document.getElementById('search-input').value = r.name;
+      closeSearch();
+      map.flyTo({ center: [r.lon, r.lat], zoom: 17, duration: 1000 });
+      showSunshinePopup({ lng: r.lon, lat: r.lat }, r.name);
+    });
+    ul.appendChild(li);
+  });
+  ul.style.display = 'block';
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 
@@ -652,6 +808,10 @@ map.on('moveend', () => scheduleFetch(400));
 map.on('zoomend', () => scheduleFetch(400));
 
 document.getElementById('time-input').addEventListener('change', () => scheduleFetch(0));
+document.getElementById('btn-now').addEventListener('click', () => {
+  document.getElementById('time-input').value = nowLocalTime();
+  scheduleFetch(0);
+});
 
 setInterval(fetchSun, 10 * 60 * 1000);
 

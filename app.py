@@ -7,7 +7,7 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import HTMLResponse
 from shapely import wkb
 
-from shadows import compute_shadows, sun_position, sunshine_remaining, get_daylight_times
+from shadows import compute_shadows, sun_position, sunshine_remaining, get_daylight_times, project_to_building_exterior
 
 
 app = FastAPI(title="Munich Sunshine")
@@ -149,12 +149,44 @@ def get_sunshine(
     """
     parsed_dt = _parse_dt(dt)
     buildings = _query_buildings_near(_db(), lat, lon)
-    result = sunshine_remaining(lat, lon, buildings, parsed_dt)
+    # If the point is inside a building footprint (typical for POI clicks), project
+    # it ~3 m outward to the nearest exterior edge so we check outdoor sunshine.
+    check_lat, check_lon = project_to_building_exterior(lat, lon, buildings)
+    result = sunshine_remaining(check_lat, check_lon, buildings, parsed_dt)
     result["lat"] = lat
     result["lon"] = lon
     result["datetime"] = parsed_dt.isoformat()
     result["nearby_buildings"] = len(buildings)
     return result
+
+
+@app.get("/api/search")
+def search_places(q: str = Query(..., description="Search query")):
+    """Search for places in Munich via Nominatim (OSM geocoding)."""
+    resp = httpx.get(
+        "https://nominatim.openstreetmap.org/search",
+        params={
+            "q": q,
+            "format": "json",
+            "countrycodes": "de",
+            "limit": 8,
+            "viewbox": "11.3,48.3,11.8,48.0",  # west,north,east,south
+            "bounded": 1,
+        },
+        headers={"User-Agent": "MunichSunshine/1.0 (https://github.com/local/munich-sunshine)"},
+        timeout=5,
+    )
+    resp.raise_for_status()
+    return [
+        {
+            "name": it.get("display_name", "").split(",")[0],
+            "display": ", ".join(it.get("display_name", "").split(",")[:3]),
+            "lat": float(it["lat"]),
+            "lon": float(it["lon"]),
+            "type": it.get("type", ""),
+        }
+        for it in resp.json()
+    ]
 
 
 @app.get("/", response_class=HTMLResponse)

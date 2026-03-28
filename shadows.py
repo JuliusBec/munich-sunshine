@@ -127,6 +127,31 @@ def compute_shadows(buildings: list[dict], dt: datetime) -> dict:
     }
 
 
+def project_to_building_exterior(lat: float, lon: float, buildings: list[dict], offset_m: float = 3.0):
+    """
+    If (lat, lon) falls inside a building footprint, return a point offset_m metres
+    outside the nearest edge (outward from the building centroid).
+    Returns (lat, lon) unchanged if the point isn't inside any building.
+    """
+    pt = Point(lon, lat)
+    for b in buildings:
+        if b["geom"].contains(pt):
+            exterior = b["geom"].exterior if b["geom"].geom_type == "Polygon" else b["geom"].geoms[0].exterior
+            # nearest point on the boundary
+            nearest = exterior.interpolate(exterior.project(pt))
+            centroid = b["geom"].centroid
+            # vector from centroid to boundary point, in metres
+            dx_m = (nearest.x - centroid.x) * _M_PER_DEG_LON
+            dy_m = (nearest.y - centroid.y) * _M_PER_DEG_LAT
+            dist_m = (dx_m ** 2 + dy_m ** 2) ** 0.5
+            if dist_m == 0:
+                break
+            new_lat = nearest.y + (dy_m / dist_m) * offset_m / _M_PER_DEG_LAT
+            new_lon = nearest.x + (dx_m / dist_m) * offset_m / _M_PER_DEG_LON
+            return new_lat, new_lon
+    return lat, lon
+
+
 def _is_in_shadow(lat: float, lon: float, buildings: list[dict], azimuth: float, elevation: float) -> bool:
     """Return True if the point (lat, lon) falls inside any building's shadow."""
     pt = Point(lon, lat)
@@ -150,7 +175,7 @@ def get_daylight_times(dt: datetime) -> dict:
         if elev.iloc[i - 1] <= 0 and elev.iloc[i] > 0 and sunrise is None:
             sunrise = times[i].isoformat()
         elif elev.iloc[i - 1] > 0 and elev.iloc[i] <= 0 and sunset is None:
-            sunset = times[i].isoformat()
+            sunset = times[i - 1].isoformat()
     return {"sunrise": sunrise, "sunset": sunset}
 
 
