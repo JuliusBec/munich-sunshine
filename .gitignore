@@ -6,6 +6,7 @@ CLAUDE.md
 *.geojsonl
 *.osm.pbf
 *.duckdb
+!munich.duckdb
 
 # Python
 venv/
