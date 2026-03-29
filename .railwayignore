@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.geojsonl
+*.osm.pbf
+CLAUDE.md
+.claude/
+.DS_Store
