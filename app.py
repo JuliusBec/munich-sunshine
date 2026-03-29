@@ -193,3 +193,9 @@ def search_places(q: str = Query(..., description="Search query")):
 def index():
     with open("index.html") as f:
         return f.read()
+
+
+@app.get("/impressum", response_class=HTMLResponse)
+def impressum():
+    with open("impressum.html") as f:
+        return f.read()
