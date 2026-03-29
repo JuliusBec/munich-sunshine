@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Munich Sunshine</title>
+  <title>Sunny Side</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
@@ -31,9 +31,35 @@
       font-size: 15px;
       font-weight: 700;
       color: #1a1a1a;
-      margin-bottom: 14px;
+      margin-bottom: 0;
       letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
     }
+
+    /* panel toggle — visible on desktop too */
+    #panel-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px; height: 20px;
+      border: none;
+      background: none;
+      color: #888;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+      transition: transform 0.25s ease;
+    }
+    #panel.expanded #panel-toggle { transform: rotate(180deg); }
+
+    /* body hidden by default; shown when expanded */
+    #panel .panel-body { display: none; }
+    #panel.expanded .panel-body { display: block; margin-top: 14px; }
 
     .row {
       display: flex;
@@ -258,6 +284,127 @@
       z-index: 10;
       display: none;
     }
+
+    /* ── Mobile bar (hidden on desktop) ── */
+    #mobile-bar { display: none; }
+
+    @media (max-width: 480px) {
+      /* hide desktop controls */
+      #panel { display: none !important; }
+      #search-container {
+        display: none;
+        position: absolute;
+        top: 60px;
+        left: 8px;
+        right: 8px;
+        width: auto;
+        z-index: 11;
+      }
+      #search-container.mobile-open { display: block; }
+      #search-input { border-radius: 10px; }
+
+      /* push map below the bar (extra room for reset badge overflow) */
+      #map { top: 60px; }
+
+      /* top bar */
+      #mobile-bar {
+        display: flex;
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 60px;
+        background: rgba(255,255,255,0.93);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 2px 12px rgba(0,0,0,0.18);
+        z-index: 10;
+        align-items: center;
+        padding: 0 10px;
+        gap: 10px;
+        overflow: visible;
+      }
+
+      #mobile-search-btn {
+        width: 38px; height: 38px;
+        border-radius: 50%;
+        border: 1.5px solid #e0e0e0;
+        background: #fff;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+        color: #666;
+        cursor: pointer;
+        padding: 0;
+      }
+      #mobile-search-btn.active { border-color: #f5a623; color: #f5a623; background: #fff8ee; }
+
+      #mobile-arc-wrap {
+        flex: 1;
+        min-width: 0;
+      }
+      #mobile-arc-svg {
+        width: 100%; height: 36px; display: block;
+        cursor: grab; user-select: none; touch-action: none;
+      }
+      #mobile-arc-daylight {
+        display: flex;
+        justify-content: space-between;
+        font-size: 9px;
+        color: #aaa;
+        margin-top: 1px;
+        line-height: 1;
+      }
+
+      #mobile-time-wrap {
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+      }
+      #mobile-time-btn {
+        position: relative;
+        background: #fff;
+        border: 1.5px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 5px 8px;
+        min-width: 56px;
+        text-align: center;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      #mobile-time-btn:active { border-color: #f5a623; }
+      #mobile-time-label {
+        font-size: 15px;
+        font-weight: 700;
+        color: #1a1a1a;
+        line-height: 1.2;
+        display: block;
+        pointer-events: none;
+      }
+      #mobile-time-input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        width: 100%; height: 100%;
+        cursor: pointer;
+        border: none;
+        padding: 0; margin: 0;
+      }
+      #mobile-reset-btn {
+        display: none;
+        width: 22px; height: 22px;
+        border-radius: 50%;
+        border: 1.5px solid #f5a623;
+        background: #fff;
+        color: #f5a623;
+        cursor: pointer;
+        padding: 0;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+        transition: background 0.15s, color 0.15s;
+      }
+      #mobile-reset-btn.visible { display: flex; }
+      #mobile-reset-btn:active { background: #f5a623; color: #fff; }
+    }
   </style>
 </head>
 <body>
@@ -271,8 +418,9 @@
 </div>
 
 <div id="panel">
-  <h1>☀ Munich Sunshine</h1>
+  <h1>☀<span id="panel-title-text"> Sunny Side</span><button id="panel-toggle" aria-label="Toggle panel">▾</button></h1>
 
+  <div class="panel-body">
   <!-- sun arc visualiser -->
   <div id="sun-arc">
     <svg viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
@@ -323,6 +471,7 @@
   </div>
 
   <div id="status"></div>
+  </div><!-- /.panel-body -->
 </div>
 
 <div id="sun-indicator">
@@ -345,6 +494,43 @@
 
 <div id="spinner">Computing shadows…</div>
 <div id="night-banner">Sun is below the horizon — no shadows</div>
+
+<!-- ── Mobile top bar ── -->
+<div id="mobile-bar">
+  <button id="mobile-search-btn" aria-label="Search">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
+    </svg>
+  </button>
+
+  <div id="mobile-arc-wrap">
+    <svg id="mobile-arc-svg" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
+      <line x1="10" y1="44" x2="190" y2="44" stroke="#d0d0d0" stroke-width="1"/>
+      <path d="M10,44 Q100,4 190,44" fill="none" stroke="#f5e4b8" stroke-width="2" stroke-dasharray="4 3"/>
+      <circle id="mobile-arc-dot" cx="100" cy="24" r="7" fill="#f5a623"/>
+      <text x="10" y="50" font-size="8" fill="#aaa">E</text>
+      <text x="93" y="50" font-size="8" fill="#aaa">S</text>
+      <text x="185" y="50" font-size="8" fill="#aaa">W</text>
+    </svg>
+    <div id="mobile-arc-daylight">
+      <span id="mobile-arc-sunrise">—</span>
+      <span id="mobile-arc-sunset">—</span>
+    </div>
+  </div>
+
+  <div id="mobile-time-wrap">
+    <div id="mobile-time-btn">
+      <span id="mobile-time-label">--:--</span>
+      <input type="time" id="mobile-time-input" step="300" />
+    </div>
+    <button id="mobile-reset-btn" aria-label="Reset to now">
+      <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+      </svg>
+    </button>
+  </div>
+</div>
 
 <script>
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -543,10 +729,13 @@ function elevationToY(el) {
 }
 
 function updateSunArc(azimuth, elevation, above) {
-  const dot = document.getElementById('arc-dot');
-  dot.setAttribute('cx', azimuthToX(azimuth));
-  dot.setAttribute('cy', above ? elevationToY(elevation) : 50);
-  dot.setAttribute('fill', above ? '#f5a623' : '#aaa');
+  const cx = azimuthToX(azimuth);
+  const cy = above ? elevationToY(elevation) : 50;
+  const fill = above ? '#f5a623' : '#aaa';
+  for (const id of ['arc-dot', 'mobile-arc-dot']) {
+    const dot = document.getElementById(id);
+    if (dot) { dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); dot.setAttribute('fill', fill); }
+  }
 }
 
 // ── Cloud cover + daylight times ──────────────────────────────────────────
@@ -568,11 +757,15 @@ async function fetchSun() {
 
     if (data.sunrise) {
       _sunrise = new Date(data.sunrise);
-      document.getElementById('arc-sunrise-label').textContent = fmt24(_sunrise);
+      const t = fmt24(_sunrise);
+      document.getElementById('arc-sunrise-label').textContent = t;
+      document.getElementById('mobile-arc-sunrise').textContent = t;
     }
     if (data.sunset) {
       _sunset = new Date(data.sunset);
-      document.getElementById('arc-sunset-label').textContent = fmt24(_sunset);
+      const t = fmt24(_sunset);
+      document.getElementById('arc-sunset-label').textContent = t;
+      document.getElementById('mobile-arc-sunset').textContent = t;
     }
   } catch (_) {}
 }
@@ -685,8 +878,17 @@ navigator.geolocation?.getCurrentPosition(pos => {
 
 // ── Arc slider ────────────────────────────────────────────────────────────
 
-(function () {
-  const arcSvg = document.querySelector('#sun-arc svg');
+function syncMobileTime() {
+  const val = document.getElementById('time-input').value;
+  const label = document.getElementById('mobile-time-label');
+  const mInput = document.getElementById('mobile-time-input');
+  const resetBtn = document.getElementById('mobile-reset-btn');
+  if (label) label.textContent = val || '--:--';
+  if (mInput) mInput.value = val;
+  if (resetBtn) resetBtn.classList.toggle('visible', !!val && val !== nowLocalTime());
+}
+
+function makeArcSlider(arcSvg, dotId) {
   let dragging = false;
   let _arcRect = null;
 
@@ -694,18 +896,20 @@ navigator.geolocation?.getCurrentPosition(pos => {
     if (!_sunrise || !_sunset || !_arcRect) return;
     const frac = Math.max(0, Math.min(1, (clientX - _arcRect.left) / _arcRect.width));
     const ms   = _sunrise.getTime() + frac * (_sunset.getTime() - _sunrise.getTime());
-    // Snap to nearest 30-minute mark, sunrise, or sunset — whichever is closest
     const snap30 = Math.round(ms / (30 * 60 * 1000)) * (30 * 60 * 1000);
     const candidates = [snap30, _sunrise.getTime(), _sunset.getTime()];
     const snapped = new Date(candidates.reduce((best, t) => Math.abs(t - ms) < Math.abs(best - ms) ? t : best));
     const h = snapped.getHours(), m = snapped.getMinutes();
-    document.getElementById('time-input').value =
-      `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-    // Move the arc dot along the bezier curve (M10,44 Q100,4 190,44)
-    // x is linear in t for this curve, so t = frac; y = 44 - 80t + 80t²
-    const dot = document.getElementById('arc-dot');
-    dot.setAttribute('cx', 10 + frac * 180);
-    dot.setAttribute('cy', 44 - 80 * frac + 80 * frac * frac);
+    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    document.getElementById('time-input').value = timeStr;
+    syncMobileTime();
+    // Move both arc dots
+    const cx = 10 + frac * 180;
+    const cy = 44 - 80 * frac + 80 * frac * frac;
+    for (const id of ['arc-dot', 'mobile-arc-dot']) {
+      const dot = document.getElementById(id);
+      if (dot) { dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); }
+    }
   }
 
   arcSvg.addEventListener('pointerdown', e => {
@@ -726,7 +930,10 @@ navigator.geolocation?.getCurrentPosition(pos => {
     dragging = false;
     arcSvg.style.cursor = 'grab';
   });
-})();
+}
+
+makeArcSlider(document.querySelector('#sun-arc svg'));
+makeArcSlider(document.getElementById('mobile-arc-svg'));
 
 // ── Search ────────────────────────────────────────────────────────────────
 
@@ -779,9 +986,51 @@ function renderSearchResults(results) {
   ul.style.display = 'block';
 }
 
+// ── Desktop panel toggle ──────────────────────────────────────────────────
+
+document.querySelector('#panel h1').addEventListener('click', () => {
+  document.getElementById('panel').classList.toggle('expanded');
+});
+
+// ── Mobile bar interactions ───────────────────────────────────────────────
+
+// Search toggle
+document.getElementById('mobile-search-btn').addEventListener('click', () => {
+  const sc = document.getElementById('search-container');
+  const btn = document.getElementById('mobile-search-btn');
+  const opening = !sc.classList.contains('mobile-open');
+  sc.classList.toggle('mobile-open', opening);
+  btn.classList.toggle('active', opening);
+  if (opening) { document.getElementById('search-input').focus(); }
+});
+
+// Close mobile search when a result is selected (closeSearch() already hides results;
+// also remove mobile-open so the whole overlay disappears)
+const _origCloseSearch = closeSearch;
+closeSearch = function() {
+  _origCloseSearch();
+  document.getElementById('search-container').classList.remove('mobile-open');
+  document.getElementById('mobile-search-btn').classList.remove('active');
+};
+
+// Reset to now
+document.getElementById('mobile-reset-btn').addEventListener('click', () => {
+  document.getElementById('time-input').value = nowLocalTime();
+  syncMobileTime();
+  scheduleFetch(0);
+});
+
+// Mobile time input syncs with the main #time-input
+document.getElementById('mobile-time-input').addEventListener('change', function() {
+  document.getElementById('time-input').value = this.value;
+  syncMobileTime();
+  scheduleFetch(0);
+});
+
 // ── Boot ──────────────────────────────────────────────────────────────────
 
 document.getElementById('time-input').value = nowLocalTime();
+syncMobileTime();
 
 // POI classes to keep — food, drink, and outdoor seating only
 const KEEP_POI_CLASSES = [
@@ -807,9 +1056,10 @@ map.on('load', () => {
 map.on('moveend', () => scheduleFetch(400));
 map.on('zoomend', () => scheduleFetch(400));
 
-document.getElementById('time-input').addEventListener('change', () => scheduleFetch(0));
+document.getElementById('time-input').addEventListener('change', () => { syncMobileTime(); scheduleFetch(0); });
 document.getElementById('btn-now').addEventListener('click', () => {
   document.getElementById('time-input').value = nowLocalTime();
+  syncMobileTime();
   scheduleFetch(0);
 });
 
