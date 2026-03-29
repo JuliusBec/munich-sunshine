@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py shadows.py osm_data.py weather_data.py index.html ./
 
 ARG DB_URL=https://github.com/JuliusBec/munich-sunshine/releases/download/v1.0/munich.duckdb
-RUN wget -q -O munich.duckdb "$DB_URL"
+RUN python -c "import urllib.request; urllib.request.urlretrieve('${DB_URL}', 'munich.duckdb')"
 
 EXPOSE 8000
 CMD uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}
